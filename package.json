@@ -1,17 +1,21 @@
 {
-  "name": "copilot-gate",
+  "name": "shadow-gate",
   "version": "0.1.0",
   "description": "Secure reverse proxy for copilot-api with GitHub OAuth authentication",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "copilot-gate": "./dist/index.js"
+    "shadow-gate": "./src/index.ts"
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target node",
     "start": "bun run src/index.ts"
   },
+  "files": [
+    "src",
+    "dist"
+  ],
   "keywords": [
     "copilot",
     "proxy",
@@ -19,6 +23,10 @@
     "openai",
     "anthropic"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GhostComplex/shadow-gate.git"
+  },
   "author": "",
   "license": "MIT",
   "devDependencies": {
