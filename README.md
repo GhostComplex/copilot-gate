@@ -1,4 +1,4 @@
-# copilot-gate
+# shadow-gate
 
 Secure reverse proxy for [copilot-api](https://github.com/ericc-ch/copilot-api) with GitHub OAuth authentication.
 
@@ -8,14 +8,14 @@ When using `copilot-api` across multiple machines, each machine would need to ru
 - Multiple IP addresses accessing GitHub Copilot → potential abuse detection
 - Token management headaches on each machine
 
-**copilot-gate** solves this by:
+**shadow-gate** solves this by:
 1. Running `copilot-api` on a single VM with a stable IP
 2. Adding an authentication layer using GitHub tokens
 3. Allowing your other machines to connect through this proxy
 
 ```
 [MacBook] ──┐
-            ├── (GitHub PAT auth) ──> [copilot-gate :4141] ──> [copilot-api :4142] ──> GitHub Copilot
+            ├── (GitHub PAT auth) ──> [shadow-gate :4142] ──> [copilot-api :4141] ──> GitHub Copilot
 [HomeLab] ──┘
 ```
 
@@ -25,28 +25,25 @@ When using `copilot-api` across multiple machines, each machine would need to ru
 
 ```bash
 # Clone the repo
-git clone https://github.com/GhostComplex/copilot-gate.git
-cd copilot-gate
+git clone https://github.com/GhostComplex/shadow-gate.git
+cd shadow-gate
 
 # Configure
 cp .env.example .env
 # Edit .env with your settings
 
-# Start both copilot-api and copilot-gate
+# Start both copilot-api and shadow-gate
 docker compose up -d
 ```
 
-### Option 2: npx (Development)
+### Option 2: Separate Processes (Development)
 
 ```bash
-# Terminal 1: Start copilot-api
-npx copilot-api@latest start --port 4142
+# Terminal 1: Start copilot-api (default port 4141)
+npx copilot-api@latest start
 
-# Terminal 2: Start copilot-gate
-cd copilot-gate
-bun run start
-# Or with explicit user:
-bun run start --allowed-user your-github-username
+# Terminal 2: Start shadow-gate (default port 4142)
+bunx shadow-gate --allowed-users your-github-username
 ```
 
 ## Client Configuration
@@ -61,7 +58,7 @@ Create `.claude/settings.json`:
 {
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "ghp_YOUR_GITHUB_PAT",
-    "ANTHROPIC_BASE_URL": "https://your-vm-address:4141",
+    "ANTHROPIC_BASE_URL": "https://your-vm-address:4142",
     "ANTHROPIC_MODEL": "claude-sonnet-4-20250514"
   }
 }
@@ -74,14 +71,14 @@ import openai
 
 client = openai.OpenAI(
     api_key="ghp_YOUR_GITHUB_PAT",  # Your GitHub PAT
-    base_url="https://your-vm-address:4141/v1"
+    base_url="https://your-vm-address:4142/v1"
 )
 ```
 
 ### curl
 
 ```bash
-curl https://your-vm-address:4141/v1/chat/completions \
+curl https://your-vm-address:4142/v1/chat/completions \
   -H "Authorization: Bearer ghp_YOUR_GITHUB_PAT" \
   -H "Content-Type: application/json" \
   -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}]}'
@@ -89,7 +86,7 @@ curl https://your-vm-address:4141/v1/chat/completions \
 
 ## Authentication
 
-copilot-gate uses GitHub tokens (PAT or `gh auth token`) for authentication:
+shadow-gate uses GitHub tokens (PAT or `gh auth token`) for authentication:
 
 1. **Server side**: Configure `ALLOWED_USERS` with a comma-separated whitelist of GitHub usernames
 2. **Client side**: Send your GitHub token in the `Authorization: Bearer <token>` header
@@ -116,8 +113,8 @@ gh auth token  # Copy this output
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `4141` | Port to listen on |
-| `UPSTREAM` | `http://localhost:4142` | Upstream copilot-api URL |
+| `PORT` | `4142` | Port to listen on |
+| `UPSTREAM` | `http://localhost:4141` | Upstream copilot-api URL |
 | `ALLOWED_USERS` | (required) | Comma-separated GitHub usernames whitelist |
 | `CACHE_TTL_MS` | `300000` | Token cache TTL (5 minutes) |
 | `VERBOSE` | `false` | Enable verbose logging |
@@ -125,7 +122,7 @@ gh auth token  # Copy this output
 ### CLI Arguments
 
 ```
-copilot-gate [OPTIONS]
+shadow-gate [OPTIONS]
 
 OPTIONS:
   -p, --port <PORT>              Port to listen on
@@ -150,7 +147,7 @@ Client Request
      │ Authorization: Bearer ghp_xxx (client's GitHub token)
      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ copilot-gate                                                │
+│ shadow-gate                                                 │
 │                                                             │
 │  1. Extract token from Authorization header                 │
 │  2. Call GitHub API to verify token belongs to allowed user │

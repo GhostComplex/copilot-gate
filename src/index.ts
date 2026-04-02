@@ -26,8 +26,8 @@ function parseAllowedUsers(value: string | undefined): string[] {
 function parseArgs(): Config {
   const args = process.argv.slice(2);
   const config: Config = {
-    port: parseInt(process.env.PORT || "4141"),
-    upstream: process.env.UPSTREAM || "http://localhost:4142",
+    port: parseInt(process.env.PORT || "4142"),
+    upstream: process.env.UPSTREAM || "http://localhost:4141",
     allowedUsers: parseAllowedUsers(process.env.ALLOWED_USERS),
     cacheTtlMs: parseInt(process.env.CACHE_TTL_MS || "300000"), // 5 minutes
     verbose: process.env.VERBOSE === "true",
@@ -62,14 +62,14 @@ function parseArgs(): Config {
 
 function printHelp() {
   console.log(`
-copilot-gate - Secure reverse proxy for copilot-api
+shadow-gate - Secure reverse proxy for copilot-api
 
 USAGE:
-  copilot-gate [OPTIONS]
+  shadow-gate [OPTIONS]
 
 OPTIONS:
-  -p, --port <PORT>              Port to listen on (default: 4141, env: PORT)
-  -u, --upstream <URL>           Upstream copilot-api URL (default: http://localhost:4142, env: UPSTREAM)
+  -p, --port <PORT>              Port to listen on (default: 4142, env: PORT)
+  -u, --upstream <URL>           Upstream copilot-api URL (default: http://localhost:4141, env: UPSTREAM)
       --allowed-users <USERS>    Comma-separated GitHub usernames whitelist (required, env: ALLOWED_USERS)
   -v, --verbose                  Enable verbose logging (env: VERBOSE=true)
   -h, --help                     Show this help message
@@ -271,7 +271,7 @@ async function main() {
     },
   });
 
-  console.log(`[ready] copilot-gate listening on http://localhost:${server.port}`);
+  console.log(`[ready] shadow-gate listening on http://localhost:${server.port}`);
 }
 
 main();
