@@ -7,7 +7,7 @@ import type {
   AnthropicStreamState,
 } from "./types/anthropic";
 import type { OpenAIChatCompletionChunk } from "./types/openai";
-import { mapOpenAIStopReasonToAnthropic } from "./utils";
+import { mapToAnthropicStopReason } from "./types/openai";
 
 // Re-export for external use
 export type { OpenAIChatCompletionChunk };
@@ -169,7 +169,7 @@ export function translateChunkToAnthropicEvents(
       {
         type: "message_delta",
         delta: {
-          stop_reason: mapOpenAIStopReasonToAnthropic(choice.finish_reason),
+          stop_reason: mapToAnthropicStopReason(choice.finish_reason),
           stop_sequence: null,
         },
         usage: {

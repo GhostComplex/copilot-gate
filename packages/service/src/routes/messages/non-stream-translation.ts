@@ -22,7 +22,7 @@ import type {
   OpenAIChatCompletionsPayload,
   OpenAIChatCompletionResponse,
 } from "./types/openai";
-import { mapOpenAIStopReasonToAnthropic } from "./utils";
+import { mapToAnthropicStopReason } from "./types/openai";
 
 // Re-export for external use
 export type { OpenAIChatCompletionResponse };
@@ -281,7 +281,7 @@ export function translateToAnthropic(
     role: "assistant",
     model: response.model,
     content: [...allTextBlocks, ...allToolUseBlocks],
-    stop_reason: mapOpenAIStopReasonToAnthropic(stopReason),
+    stop_reason: mapToAnthropicStopReason(stopReason),
     stop_sequence: null,
     usage: {
       input_tokens:

@@ -120,3 +120,23 @@ export type OpenAIFinishReason =
   | "length"
   | "tool_calls"
   | "content_filter";
+
+// ============================================================================
+// Mapping
+// ============================================================================
+
+import type { AnthropicResponse } from "./anthropic";
+
+const STOP_REASON_MAP = {
+  stop: "end_turn",
+  length: "max_tokens",
+  tool_calls: "tool_use",
+  content_filter: "end_turn",
+} as const;
+
+export function mapToAnthropicStopReason(
+  finishReason: OpenAIFinishReason | null
+): AnthropicResponse["stop_reason"] {
+  if (finishReason === null) return null;
+  return STOP_REASON_MAP[finishReason];
+}
