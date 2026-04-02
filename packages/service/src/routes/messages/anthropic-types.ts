@@ -1,5 +1,7 @@
 /**
  * Anthropic API Types
+ *
+ * Matches copilot-api's routes/messages/anthropic-types.ts
  */
 
 // ============================================================================
@@ -11,12 +13,23 @@ export interface AnthropicMessagesPayload {
   messages: AnthropicMessage[];
   max_tokens: number;
   system?: string | AnthropicTextBlock[];
+  metadata?: {
+    user_id?: string;
+  };
   stop_sequences?: string[];
   stream?: boolean;
   temperature?: number;
   top_p?: number;
+  top_k?: number;
   tools?: AnthropicTool[];
-  tool_choice?: AnthropicToolChoice;
+  tool_choice?: {
+    type: "auto" | "any" | "tool" | "none";
+    name?: string;
+  };
+  thinking?: {
+    type: "enabled";
+    budget_tokens?: number;
+  };
 }
 
 export interface AnthropicTextBlock {
@@ -47,6 +60,11 @@ export interface AnthropicToolUseBlock {
   input: Record<string, unknown>;
 }
 
+export interface AnthropicThinkingBlock {
+  type: "thinking";
+  thinking: string;
+}
+
 export type AnthropicUserContentBlock =
   | AnthropicTextBlock
   | AnthropicImageBlock
@@ -54,7 +72,8 @@ export type AnthropicUserContentBlock =
 
 export type AnthropicAssistantContentBlock =
   | AnthropicTextBlock
-  | AnthropicToolUseBlock;
+  | AnthropicToolUseBlock
+  | AnthropicThinkingBlock;
 
 export interface AnthropicUserMessage {
   role: "user";
@@ -74,11 +93,6 @@ export interface AnthropicTool {
   input_schema: Record<string, unknown>;
 }
 
-export interface AnthropicToolChoice {
-  type: "auto" | "any" | "tool" | "none";
-  name?: string;
-}
-
 // ============================================================================
 // Response Types
 // ============================================================================
@@ -89,11 +103,20 @@ export interface AnthropicResponse {
   role: "assistant";
   content: AnthropicAssistantContentBlock[];
   model: string;
-  stop_reason: "end_turn" | "max_tokens" | "stop_sequence" | "tool_use" | null;
+  stop_reason:
+    | "end_turn"
+    | "max_tokens"
+    | "stop_sequence"
+    | "tool_use"
+    | "pause_turn"
+    | "refusal"
+    | null;
   stop_sequence: string | null;
   usage: {
     input_tokens: number;
     output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
   };
 }
 
@@ -123,7 +146,8 @@ export interface AnthropicContentBlockStartEvent {
         id: string;
         name: string;
         input: Record<string, unknown>;
-      };
+      }
+    | { type: "thinking"; thinking: string };
 }
 
 export interface AnthropicContentBlockDeltaEvent {
@@ -131,7 +155,8 @@ export interface AnthropicContentBlockDeltaEvent {
   index: number;
   delta:
     | { type: "text_delta"; text: string }
-    | { type: "input_json_delta"; partial_json: string };
+    | { type: "input_json_delta"; partial_json: string }
+    | { type: "thinking_delta"; thinking: string };
 }
 
 export interface AnthropicContentBlockStopEvent {
@@ -154,13 +179,27 @@ export interface AnthropicMessageStopEvent {
   type: "message_stop";
 }
 
+export interface AnthropicPingEvent {
+  type: "ping";
+}
+
+export interface AnthropicErrorEvent {
+  type: "error";
+  error: {
+    type: string;
+    message: string;
+  };
+}
+
 export type AnthropicStreamEvent =
   | AnthropicMessageStartEvent
   | AnthropicContentBlockStartEvent
   | AnthropicContentBlockDeltaEvent
   | AnthropicContentBlockStopEvent
   | AnthropicMessageDeltaEvent
-  | AnthropicMessageStopEvent;
+  | AnthropicMessageStopEvent
+  | AnthropicPingEvent
+  | AnthropicErrorEvent;
 
 // ============================================================================
 // Stream State

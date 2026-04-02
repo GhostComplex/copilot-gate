@@ -1,13 +1,14 @@
 /**
  * Streaming translation: OpenAI chunks -> Anthropic SSE events.
+ *
+ * Matches copilot-api's routes/messages/stream-translation.ts
  */
 
 import type {
   AnthropicStreamEvent,
   AnthropicStreamState,
-  AnthropicResponse,
-} from "../types/anthropic";
-import { mapStopReason } from "./to-openai";
+} from "./anthropic-types";
+import { mapOpenAIStopReasonToAnthropic } from "./utils";
 
 // ============================================================================
 // OpenAI Chunk Types
@@ -35,6 +36,9 @@ export interface OpenAIChatCompletionChunk {
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
+    prompt_tokens_details?: {
+      cached_tokens: number;
+    };
   };
 }
 
@@ -55,16 +59,27 @@ export function createStreamState(): AnthropicStreamState {
 // Chunk Translation
 // ============================================================================
 
+function isToolBlockOpen(state: AnthropicStreamState): boolean {
+  if (!state.contentBlockOpen) {
+    return false;
+  }
+  return Object.values(state.toolCalls).some(
+    (tc) => tc.anthropicBlockIndex === state.contentBlockIndex
+  );
+}
+
 export function translateChunkToAnthropicEvents(
   chunk: OpenAIChatCompletionChunk,
   state: AnthropicStreamState
 ): AnthropicStreamEvent[] {
   const events: AnthropicStreamEvent[] = [];
 
-  if (chunk.choices.length === 0) return events;
+  if (chunk.choices.length === 0) {
+    return events;
+  }
 
   const choice = chunk.choices[0];
-  const delta = choice.delta;
+  const { delta } = choice;
 
   // Send message_start on first chunk
   if (!state.messageStartSent) {
@@ -79,8 +94,15 @@ export function translateChunkToAnthropicEvents(
         stop_reason: null,
         stop_sequence: null,
         usage: {
-          input_tokens: chunk.usage?.prompt_tokens ?? 0,
+          input_tokens:
+            (chunk.usage?.prompt_tokens ?? 0) -
+            (chunk.usage?.prompt_tokens_details?.cached_tokens ?? 0),
           output_tokens: 0,
+          ...(chunk.usage?.prompt_tokens_details?.cached_tokens !==
+            undefined && {
+            cache_read_input_tokens:
+              chunk.usage.prompt_tokens_details.cached_tokens,
+          }),
         },
       },
     });
@@ -89,8 +111,7 @@ export function translateChunkToAnthropicEvents(
 
   // Handle text content
   if (delta.content) {
-    // Close any open tool block first
-    if (state.contentBlockOpen && isToolBlockOpen(state)) {
+    if (isToolBlockOpen(state)) {
       events.push({
         type: "content_block_stop",
         index: state.contentBlockIndex,
@@ -99,7 +120,6 @@ export function translateChunkToAnthropicEvents(
       state.contentBlockOpen = false;
     }
 
-    // Open text block if needed
     if (!state.contentBlockOpen) {
       events.push({
         type: "content_block_start",
@@ -118,8 +138,8 @@ export function translateChunkToAnthropicEvents(
 
   // Handle tool calls
   if (delta.tool_calls) {
-    for (const tc of delta.tool_calls) {
-      if (tc.id && tc.function?.name) {
+    for (const toolCall of delta.tool_calls) {
+      if (toolCall.id && toolCall.function?.name) {
         // New tool call starting
         if (state.contentBlockOpen) {
           events.push({
@@ -131,9 +151,9 @@ export function translateChunkToAnthropicEvents(
         }
 
         const anthropicBlockIndex = state.contentBlockIndex;
-        state.toolCalls[tc.index] = {
-          id: tc.id,
-          name: tc.function.name,
+        state.toolCalls[toolCall.index] = {
+          id: toolCall.id,
+          name: toolCall.function.name,
           anthropicBlockIndex,
         };
 
@@ -142,23 +162,23 @@ export function translateChunkToAnthropicEvents(
           index: anthropicBlockIndex,
           content_block: {
             type: "tool_use",
-            id: tc.id,
-            name: tc.function.name,
+            id: toolCall.id,
+            name: toolCall.function.name,
             input: {},
           },
         });
         state.contentBlockOpen = true;
       }
 
-      if (tc.function?.arguments) {
-        const toolCallInfo = state.toolCalls[tc.index];
+      if (toolCall.function?.arguments) {
+        const toolCallInfo = state.toolCalls[toolCall.index];
         if (toolCallInfo) {
           events.push({
             type: "content_block_delta",
             index: toolCallInfo.anthropicBlockIndex,
             delta: {
               type: "input_json_delta",
-              partial_json: tc.function.arguments,
+              partial_json: toolCall.function.arguments,
             },
           });
         }
@@ -176,28 +196,30 @@ export function translateChunkToAnthropicEvents(
       state.contentBlockOpen = false;
     }
 
-    events.push({
-      type: "message_delta",
-      delta: {
-        stop_reason: mapStopReason(
-          choice.finish_reason
-        ) as AnthropicResponse["stop_reason"],
-        stop_sequence: null,
+    events.push(
+      {
+        type: "message_delta",
+        delta: {
+          stop_reason: mapOpenAIStopReasonToAnthropic(choice.finish_reason),
+          stop_sequence: null,
+        },
+        usage: {
+          output_tokens: chunk.usage?.completion_tokens ?? 0,
+        },
       },
-      usage: {
-        output_tokens: chunk.usage?.completion_tokens ?? 0,
-      },
-    });
-
-    events.push({ type: "message_stop" });
+      { type: "message_stop" }
+    );
   }
 
   return events;
 }
 
-function isToolBlockOpen(state: AnthropicStreamState): boolean {
-  if (!state.contentBlockOpen) return false;
-  return Object.values(state.toolCalls).some(
-    (tc) => tc.anthropicBlockIndex === state.contentBlockIndex
-  );
+export function translateErrorToAnthropicErrorEvent(): AnthropicStreamEvent {
+  return {
+    type: "error",
+    error: {
+      type: "api_error",
+      message: "An unexpected error occurred during streaming.",
+    },
+  };
 }

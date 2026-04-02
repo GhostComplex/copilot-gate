@@ -1,5 +1,7 @@
 /**
  * Non-streaming translation: Anthropic <-> OpenAI formats.
+ *
+ * Matches copilot-api's routes/messages/non-stream-translation.ts
  */
 
 import type {
@@ -9,11 +11,13 @@ import type {
   AnthropicAssistantMessage,
   AnthropicToolResultBlock,
   AnthropicToolUseBlock,
+  AnthropicThinkingBlock,
   AnthropicTool,
-  AnthropicToolChoice,
   AnthropicResponse,
   AnthropicAssistantContentBlock,
-} from "../types/anthropic";
+  AnthropicUserContentBlock,
+} from "./anthropic-types";
+import { mapOpenAIStopReasonToAnthropic } from "./utils";
 
 // ============================================================================
 // OpenAI Types (subset needed for translation)
@@ -58,6 +62,7 @@ export interface OpenAIChatCompletionsPayload {
   stream?: boolean;
   temperature?: number;
   top_p?: number;
+  user?: string;
   tools?: OpenAITool[];
   tool_choice?:
     | "auto"
@@ -81,30 +86,10 @@ export interface OpenAIChatCompletionResponse {
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
+    prompt_tokens_details?: {
+      cached_tokens: number;
+    };
   };
-}
-
-// ============================================================================
-// Model Name Normalization
-// ============================================================================
-
-/**
- * Normalize model names - Claude Code sends versioned names that need mapping.
- */
-export function translateModelName(model: string): string {
-  // claude-sonnet-4-20250514 -> claude-sonnet-4
-  if (model.startsWith("claude-sonnet-4-")) {
-    return "claude-sonnet-4";
-  }
-  // claude-opus-4-20250514 or claude-opus-4.5-xxx -> claude-opus-4
-  // Note: Copilot doesn't distinguish 4 vs 4.5, both map to claude-opus-4
-  if (
-    model.startsWith("claude-opus-4-") ||
-    model.startsWith("claude-opus-4.5")
-  ) {
-    return "claude-opus-4";
-  }
-  return model;
 }
 
 // ============================================================================
@@ -114,56 +99,74 @@ export function translateModelName(model: string): string {
 export function translateToOpenAI(
   payload: AnthropicMessagesPayload
 ): OpenAIChatCompletionsPayload {
-  const messages: OpenAIMessage[] = [];
-
-  // Handle system prompt
-  if (payload.system) {
-    const systemText =
-      typeof payload.system === "string"
-        ? payload.system
-        : payload.system.map((block) => block.text).join("\n\n");
-    messages.push({ role: "system", content: systemText });
-  }
-
-  // Handle messages
-  for (const msg of payload.messages) {
-    if (msg.role === "user") {
-      messages.push(...translateUserMessage(msg));
-    } else {
-      messages.push(...translateAssistantMessage(msg));
-    }
-  }
-
   return {
     model: translateModelName(payload.model),
-    messages,
+    messages: translateMessages(payload.messages, payload.system),
     max_tokens: payload.max_tokens,
     stop: payload.stop_sequences,
     stream: payload.stream,
     temperature: payload.temperature,
     top_p: payload.top_p,
+    user: payload.metadata?.user_id,
     tools: translateTools(payload.tools),
     tool_choice: translateToolChoice(payload.tool_choice),
   };
 }
 
-function translateUserMessage(msg: AnthropicUserMessage): OpenAIMessage[] {
+function translateModelName(model: string): string {
+  // Subagent requests use a specific model number which Copilot doesn't support
+  if (model.startsWith("claude-sonnet-4-")) {
+    return model.replace(/^claude-sonnet-4-.*/, "claude-sonnet-4");
+  } else if (model.startsWith("claude-opus-")) {
+    return model.replace(/^claude-opus-4-.*/, "claude-opus-4");
+  }
+  return model;
+}
+
+function translateMessages(
+  messages: AnthropicMessagesPayload["messages"],
+  system: AnthropicMessagesPayload["system"]
+): OpenAIMessage[] {
   const result: OpenAIMessage[] = [];
 
-  if (typeof msg.content === "string") {
-    result.push({ role: "user", content: msg.content });
+  // Handle system prompt
+  if (system) {
+    const systemText =
+      typeof system === "string"
+        ? system
+        : system.map((block) => block.text).join("\n\n");
+    result.push({ role: "system", content: systemText });
+  }
+
+  // Handle messages
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      result.push(...handleUserMessage(msg));
+    } else {
+      result.push(...handleAssistantMessage(msg));
+    }
+  }
+
+  return result;
+}
+
+function handleUserMessage(message: AnthropicUserMessage): OpenAIMessage[] {
+  const result: OpenAIMessage[] = [];
+
+  if (typeof message.content === "string") {
+    result.push({ role: "user", content: message.content });
     return result;
   }
 
   // Separate tool results from other content
-  const toolResults = msg.content.filter(
+  const toolResults = message.content.filter(
     (block): block is AnthropicToolResultBlock => block.type === "tool_result"
   );
-  const otherBlocks = msg.content.filter(
+  const otherBlocks = message.content.filter(
     (block) => block.type !== "tool_result"
   );
 
-  // Tool results become separate tool messages
+  // Tool results must come first
   for (const block of toolResults) {
     result.push({
       role: "tool",
@@ -174,55 +177,43 @@ function translateUserMessage(msg: AnthropicUserMessage): OpenAIMessage[] {
 
   // Other content becomes user message
   if (otherBlocks.length > 0) {
-    const hasImage = otherBlocks.some((block) => block.type === "image");
-    if (hasImage) {
-      const parts: OpenAIContentPart[] = [];
-      for (const block of otherBlocks) {
-        if (block.type === "text") {
-          parts.push({ type: "text", text: block.text });
-        } else if (block.type === "image") {
-          parts.push({
-            type: "image_url",
-            image_url: {
-              url: `data:${block.source.media_type};base64,${block.source.data}`,
-            },
-          });
-        }
-      }
-      result.push({ role: "user", content: parts });
-    } else {
-      const text = otherBlocks
-        .filter((block): block is AnthropicTextBlock => block.type === "text")
-        .map((block) => block.text)
-        .join("\n\n");
-      result.push({ role: "user", content: text });
-    }
+    result.push({
+      role: "user",
+      content: mapContent(otherBlocks),
+    });
   }
 
   return result;
 }
 
-function translateAssistantMessage(
-  msg: AnthropicAssistantMessage
+function handleAssistantMessage(
+  message: AnthropicAssistantMessage
 ): OpenAIMessage[] {
-  if (typeof msg.content === "string") {
-    return [{ role: "assistant", content: msg.content }];
+  if (typeof message.content === "string") {
+    return [{ role: "assistant", content: message.content }];
   }
 
-  const textBlocks = msg.content.filter(
-    (block): block is AnthropicTextBlock => block.type === "text"
-  );
-  const toolUseBlocks = msg.content.filter(
+  const toolUseBlocks = message.content.filter(
     (block): block is AnthropicToolUseBlock => block.type === "tool_use"
   );
+  const textBlocks = message.content.filter(
+    (block): block is AnthropicTextBlock => block.type === "text"
+  );
+  const thinkingBlocks = message.content.filter(
+    (block): block is AnthropicThinkingBlock => block.type === "thinking"
+  );
 
-  const textContent = textBlocks.map((b) => b.text).join("\n\n") || null;
+  // Combine text and thinking blocks
+  const allTextContent = [
+    ...textBlocks.map((b) => b.text),
+    ...thinkingBlocks.map((b) => b.thinking),
+  ].join("\n\n");
 
   if (toolUseBlocks.length > 0) {
     return [
       {
         role: "assistant",
-        content: textContent,
+        content: allTextContent || null,
         tool_calls: toolUseBlocks.map((block) => ({
           id: block.id,
           type: "function" as const,
@@ -235,7 +226,40 @@ function translateAssistantMessage(
     ];
   }
 
-  return [{ role: "assistant", content: textContent }];
+  return [{ role: "assistant", content: allTextContent || null }];
+}
+
+function mapContent(
+  content: (AnthropicUserContentBlock | AnthropicAssistantContentBlock)[]
+): string | OpenAIContentPart[] | null {
+  const hasImage = content.some((block) => block.type === "image");
+
+  if (!hasImage) {
+    return content
+      .filter(
+        (block): block is AnthropicTextBlock | AnthropicThinkingBlock =>
+          block.type === "text" || block.type === "thinking"
+      )
+      .map((block) => (block.type === "text" ? block.text : block.thinking))
+      .join("\n\n");
+  }
+
+  const parts: OpenAIContentPart[] = [];
+  for (const block of content) {
+    if (block.type === "text") {
+      parts.push({ type: "text", text: block.text });
+    } else if (block.type === "thinking") {
+      parts.push({ type: "text", text: block.thinking });
+    } else if (block.type === "image") {
+      parts.push({
+        type: "image_url",
+        image_url: {
+          url: `data:${block.source.media_type};base64,${block.source.data}`,
+        },
+      });
+    }
+  }
+  return parts;
 }
 
 function translateTools(tools?: AnthropicTool[]): OpenAITool[] | undefined {
@@ -251,7 +275,7 @@ function translateTools(tools?: AnthropicTool[]): OpenAITool[] | undefined {
 }
 
 function translateToolChoice(
-  choice?: AnthropicToolChoice
+  choice?: AnthropicMessagesPayload["tool_choice"]
 ): OpenAIChatCompletionsPayload["tool_choice"] {
   if (!choice) return undefined;
   switch (choice.type) {
@@ -274,23 +298,13 @@ function translateToolChoice(
 // OpenAI -> Anthropic Translation
 // ============================================================================
 
-function mapStopReason(
-  reason: "stop" | "length" | "tool_calls" | "content_filter" | null
-): AnthropicResponse["stop_reason"] {
-  if (!reason) return null;
-  const map = {
-    stop: "end_turn",
-    length: "max_tokens",
-    tool_calls: "tool_use",
-    content_filter: "end_turn",
-  } as const;
-  return map[reason];
-}
-
 export function translateToAnthropic(
   response: OpenAIChatCompletionResponse
 ): AnthropicResponse {
-  const content: AnthropicAssistantContentBlock[] = [];
+  const allTextBlocks: AnthropicTextBlock[] = [];
+  const allToolUseBlocks: AnthropicToolUseBlock[] = [];
+  let stopReason: "stop" | "length" | "tool_calls" | "content_filter" | null =
+    response.choices[0]?.finish_reason ?? null;
 
   // Guard against empty/missing choices
   if (!response.choices?.length) {
@@ -309,20 +323,20 @@ export function translateToAnthropic(
     };
   }
 
+  // Process all choices
   for (const choice of response.choices) {
     if (choice.message.content) {
-      content.push({ type: "text", text: choice.message.content });
+      allTextBlocks.push({ type: "text", text: choice.message.content });
     }
     if (choice.message.tool_calls) {
       for (const tc of choice.message.tool_calls) {
-        // Safely parse tool arguments - fall back to empty object on malformed JSON
         let input: Record<string, unknown>;
         try {
           input = JSON.parse(tc.function.arguments) as Record<string, unknown>;
         } catch {
           input = {};
         }
-        content.push({
+        allToolUseBlocks.push({
           type: "tool_use",
           id: tc.id,
           name: tc.function.name,
@@ -330,23 +344,31 @@ export function translateToAnthropic(
         });
       }
     }
-  }
 
-  const stopReason = response.choices[0]?.finish_reason ?? null;
+    // Prioritize tool_calls finish reason
+    if (choice.finish_reason === "tool_calls") {
+      stopReason = choice.finish_reason;
+    }
+  }
 
   return {
     id: response.id,
     type: "message",
     role: "assistant",
     model: response.model,
-    content,
-    stop_reason: mapStopReason(stopReason),
+    content: [...allTextBlocks, ...allToolUseBlocks],
+    stop_reason: mapOpenAIStopReasonToAnthropic(stopReason),
     stop_sequence: null,
     usage: {
-      input_tokens: response.usage?.prompt_tokens ?? 0,
+      input_tokens:
+        (response.usage?.prompt_tokens ?? 0) -
+        (response.usage?.prompt_tokens_details?.cached_tokens ?? 0),
       output_tokens: response.usage?.completion_tokens ?? 0,
+      ...(response.usage?.prompt_tokens_details?.cached_tokens !==
+        undefined && {
+        cache_read_input_tokens:
+          response.usage.prompt_tokens_details.cached_tokens,
+      }),
     },
   };
 }
-
-export { mapStopReason };
