@@ -43,7 +43,7 @@ docker compose up -d
 npx copilot-api@latest start
 
 # Terminal 2: Start shadow-gate (default port 4142)
-bunx shadow-gate --allowed-users your-github-username
+npx shadow-gate --allowed-users your-github-username
 ```
 
 ## Client Configuration

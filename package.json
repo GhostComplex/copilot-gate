@@ -5,15 +5,15 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "shadow-gate": "./src/index.ts"
+    "shadow-gate": "./dist/index.js"
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target node",
+    "prepublishOnly": "bun run build",
     "start": "bun run src/index.ts"
   },
   "files": [
-    "src",
     "dist"
   ],
   "keywords": [
