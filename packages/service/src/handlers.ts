@@ -3,13 +3,14 @@
  */
 
 import type { Context } from "hono";
+import { streamSSE } from "hono/streaming";
 import {
   getCopilotToken,
   forwardChatCompletions,
   TokenExchangeError,
 } from "./copilot";
 import { extractToken } from "./utils";
-import { proxySSE } from "./sse";
+import { transformSSE } from "./sse";
 import {
   translateToOpenAI,
   translateToAnthropic,
@@ -121,25 +122,31 @@ export async function messages(c: Context) {
     return c.json(anthropicResponse);
   }
 
-  // 6. Handle streaming response - translate SSE chunks
+  // 6. Handle streaming response
   if (!upstream.body) {
     return c.json({ error: "No upstream body" }, 502);
   }
 
   const state = createStreamState();
 
-  return proxySSE(c, upstream.body, (_event, data) => {
-    const trimmed = data.trim();
-    if (trimmed === "[DONE]" || !trimmed) return null;
+  return streamSSE(c, async (stream) => {
+    const events = transformSSE(upstream.body!, (_event, data) => {
+      const trimmed = data.trim();
+      if (trimmed === "[DONE]" || !trimmed) return null;
 
-    try {
-      const chunk = JSON.parse(trimmed) as OpenAIChatCompletionChunk;
-      return translateChunkToAnthropicEvents(chunk, state).map((e) => ({
-        event: e.type,
-        data: JSON.stringify(e),
-      }));
-    } catch {
-      return null;
+      try {
+        const chunk = JSON.parse(trimmed) as OpenAIChatCompletionChunk;
+        return translateChunkToAnthropicEvents(chunk, state).map((e) => ({
+          event: e.type,
+          data: JSON.stringify(e),
+        }));
+      } catch {
+        return null;
+      }
+    });
+
+    for await (const e of events) {
+      await stream.writeSSE({ event: e.event, data: e.data });
     }
   });
 }

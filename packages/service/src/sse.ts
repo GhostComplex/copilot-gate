@@ -1,9 +1,55 @@
 /**
- * SSE (Server-Sent Events) utilities.
+ * SSE (Server-Sent Events) stream utilities using Web Streams API.
  */
 
-import type { Context } from "hono";
-import { streamSSE } from "hono/streaming";
+/**
+ * A TransformStream that splits incoming text into lines,
+ * handling chunks that may split across line boundaries.
+ */
+function lineStream(): TransformStream<string, string> {
+  let buffer = "";
+
+  return new TransformStream({
+    transform(chunk, controller) {
+      buffer += chunk;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (line) controller.enqueue(line);
+      }
+    },
+    flush(controller) {
+      if (buffer) controller.enqueue(buffer);
+    },
+  });
+}
+
+/**
+ * A TransformStream that parses SSE format, extracting event type and data.
+ * Handles both `event:` and `data:` fields per SSE spec.
+ */
+function sseParseStream(): TransformStream<
+  string,
+  { event?: string; data: string }
+> {
+  let currentEvent = "";
+
+  return new TransformStream({
+    transform(line, controller) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith("data: ")) {
+        controller.enqueue({
+          event: currentEvent || undefined,
+          data: line.slice(6),
+        });
+        currentEvent = "";
+      }
+      // Ignore comments (`:`) and other fields
+    },
+  });
+}
 
 export interface SSEEvent {
   event?: string;
@@ -11,68 +57,46 @@ export interface SSEEvent {
 }
 
 /**
- * Parse SSE stream from a ReadableStream.
- * Handles both `event:` and `data:` fields.
+ * Parse a ReadableStream of bytes into SSE events.
+ *
+ * Uses Web Streams API with TransformStream pipeline:
+ * bytes → text → lines → SSE events
  */
-export async function* parseSSEStream(
+export function parseSSE(
   body: ReadableStream<Uint8Array>
+): ReadableStream<SSEEvent> {
+  return body
+    .pipeThrough(new TextDecoderStream())
+    .pipeThrough(lineStream())
+    .pipeThrough(sseParseStream());
+}
+
+/**
+ * Create an SSE response by transforming upstream SSE events.
+ *
+ * @param c - Hono context
+ * @param body - Upstream SSE stream
+ * @param transform - Transform function. Return array of events to emit, or null to skip.
+ */
+export async function* transformSSE(
+  body: ReadableStream<Uint8Array>,
+  transform: (event: string | undefined, data: string) => SSEEvent[] | null
 ): AsyncGenerator<SSEEvent> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let currentEvent = "";
+  const reader = parseSSE(body).getReader();
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (line.startsWith("event: ")) {
-          currentEvent = line.slice(7).trim();
-        } else if (line.startsWith("data: ")) {
-          yield { event: currentEvent || undefined, data: line.slice(6) };
-          currentEvent = "";
+      const results = transform(value.event, value.data);
+      if (results) {
+        for (const e of results) {
+          yield e;
         }
       }
     }
   } finally {
-    await reader.cancel();
+    reader.releaseLock();
   }
-}
-
-/**
- * Proxy SSE events from an upstream response, optionally transforming them.
- *
- * @param c - Hono context
- * @param body - Upstream response body (ReadableStream)
- * @param transform - Optional function to transform events. Return null to skip.
- */
-export function proxySSE(
-  c: Context,
-  body: ReadableStream<Uint8Array>,
-  transform?: (event: string | undefined, data: string) => SSEEvent[] | null
-): Response {
-  return streamSSE(c, async (stream) => {
-    try {
-      for await (const { event, data } of parseSSEStream(body)) {
-        if (transform) {
-          const results = transform(event, data);
-          if (results) {
-            for (const e of results) {
-              await stream.writeSSE({ event: e.event, data: e.data });
-            }
-          }
-        } else {
-          await stream.writeSSE({ event, data });
-        }
-      }
-    } catch (err) {
-      console.error("SSE proxy error:", err);
-    }
-  });
 }
