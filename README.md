@@ -91,10 +91,10 @@ curl https://your-vm-address:4141/v1/chat/completions \
 
 copilot-gate uses GitHub tokens (PAT or `gh auth token`) for authentication:
 
-1. **Server side**: Configure `ALLOWED_USER` to specify which GitHub user is allowed
+1. **Server side**: Configure `ALLOWED_USERS` with a comma-separated whitelist of GitHub usernames
 2. **Client side**: Send your GitHub token in the `Authorization: Bearer <token>` header
 
-The server validates the token by calling GitHub API (`/user`) and checking if the username matches.
+The server validates the token by calling GitHub API (`/user`) and checking if the username is in the whitelist.
 
 ### Getting a Token
 
@@ -118,7 +118,7 @@ gh auth token  # Copy this output
 |----------|---------|-------------|
 | `PORT` | `4141` | Port to listen on |
 | `UPSTREAM` | `http://localhost:4142` | Upstream copilot-api URL |
-| `ALLOWED_USER` | (auto-detect) | GitHub username allowed to access |
+| `ALLOWED_USERS` | (required) | Comma-separated GitHub usernames whitelist |
 | `CACHE_TTL_MS` | `300000` | Token cache TTL (5 minutes) |
 | `VERBOSE` | `false` | Enable verbose logging |
 
@@ -128,11 +128,11 @@ gh auth token  # Copy this output
 copilot-gate [OPTIONS]
 
 OPTIONS:
-  -p, --port <PORT>           Port to listen on
-  -u, --upstream <URL>        Upstream copilot-api URL
-      --allowed-user <USER>   GitHub username to allow
-  -v, --verbose               Enable verbose logging
-  -h, --help                  Show help message
+  -p, --port <PORT>              Port to listen on
+  -u, --upstream <URL>           Upstream copilot-api URL
+      --allowed-users <USERS>    Comma-separated GitHub usernames whitelist
+  -v, --verbose                  Enable verbose logging
+  -h, --help                     Show help message
 ```
 
 ## Security

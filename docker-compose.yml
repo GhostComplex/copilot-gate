@@ -19,7 +19,7 @@ services:
       - "4141:4141"
     environment:
       - UPSTREAM=http://copilot-api:4142
-      - ALLOWED_USER=${ALLOWED_USER}  # GitHub username allowed to access
+      - ALLOWED_USERS=${ALLOWED_USERS}  # Comma-separated GitHub usernames
       - VERBOSE=${VERBOSE:-false}
     depends_on:
       - copilot-api

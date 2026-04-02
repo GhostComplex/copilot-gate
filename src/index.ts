@@ -13,9 +13,14 @@
 interface Config {
   port: number;
   upstream: string;
-  allowedUser: string | null;
+  allowedUsers: string[];
   cacheTtlMs: number;
   verbose: boolean;
+}
+
+function parseAllowedUsers(value: string | undefined): string[] {
+  if (!value) return [];
+  return value.split(",").map((u) => u.trim()).filter(Boolean);
 }
 
 function parseArgs(): Config {
@@ -23,7 +28,7 @@ function parseArgs(): Config {
   const config: Config = {
     port: parseInt(process.env.PORT || "4141"),
     upstream: process.env.UPSTREAM || "http://localhost:4142",
-    allowedUser: process.env.ALLOWED_USER || null,
+    allowedUsers: parseAllowedUsers(process.env.ALLOWED_USERS),
     cacheTtlMs: parseInt(process.env.CACHE_TTL_MS || "300000"), // 5 minutes
     verbose: process.env.VERBOSE === "true",
   };
@@ -38,8 +43,8 @@ function parseArgs(): Config {
       case "-u":
         config.upstream = args[++i];
         break;
-      case "--allowed-user":
-        config.allowedUser = args[++i];
+      case "--allowed-users":
+        config.allowedUsers = parseAllowedUsers(args[++i]);
         break;
       case "--verbose":
       case "-v":
@@ -63,28 +68,28 @@ USAGE:
   copilot-gate [OPTIONS]
 
 OPTIONS:
-  -p, --port <PORT>           Port to listen on (default: 4141, env: PORT)
-  -u, --upstream <URL>        Upstream copilot-api URL (default: http://localhost:4142, env: UPSTREAM)
-      --allowed-user <USER>   GitHub username to allow (default: auto-detect via gh CLI, env: ALLOWED_USER)
-  -v, --verbose               Enable verbose logging (env: VERBOSE=true)
-  -h, --help                  Show this help message
+  -p, --port <PORT>              Port to listen on (default: 4141, env: PORT)
+  -u, --upstream <URL>           Upstream copilot-api URL (default: http://localhost:4142, env: UPSTREAM)
+      --allowed-users <USERS>    Comma-separated GitHub usernames whitelist (required, env: ALLOWED_USERS)
+  -v, --verbose                  Enable verbose logging (env: VERBOSE=true)
+  -h, --help                     Show this help message
 
 AUTHENTICATION:
   Clients must send a GitHub token (PAT or gh auth token) in the Authorization header:
     Authorization: Bearer ghp_xxxxx
     Authorization: Bearer gho_xxxxx
 
-  The token is validated against GitHub API to verify the user matches --allowed-user.
+  The token is validated against GitHub API to verify the user is in the whitelist.
 
 EXAMPLES:
-  # Start with auto-detected user (requires gh CLI logged in)
-  copilot-gate
+  # Allow single user
+  copilot-gate --allowed-users steins-z
 
-  # Start with explicit user
-  copilot-gate --allowed-user steins-z --upstream http://localhost:4142
+  # Allow multiple users
+  copilot-gate --allowed-users steins-z,friend-a,friend-b
 
   # Using environment variables
-  ALLOWED_USER=steins-z UPSTREAM=http://localhost:4142 copilot-gate
+  ALLOWED_USERS=steins-z,friend-a UPSTREAM=http://localhost:4142 copilot-gate
 `);
 }
 
@@ -101,7 +106,7 @@ const tokenCache = new Map<string, CacheEntry>();
 
 async function verifyGitHubToken(
   token: string,
-  allowedUser: string,
+  allowedUsers: string[],
   cacheTtlMs: number,
   verbose: boolean
 ): Promise<{ valid: boolean; username?: string; error?: string }> {
@@ -110,7 +115,7 @@ async function verifyGitHubToken(
   if (cached && cached.expiresAt > Date.now()) {
     if (verbose) console.log(`[auth] Cache hit for user: ${cached.username}`);
     return {
-      valid: cached.username === allowedUser,
+      valid: allowedUsers.includes(cached.username),
       username: cached.username,
     };
   }
@@ -140,35 +145,12 @@ async function verifyGitHubToken(
     if (verbose) console.log(`[auth] Verified token for user: ${username}`);
 
     return {
-      valid: username === allowedUser,
+      valid: allowedUsers.includes(username),
       username,
     };
   } catch (err) {
     return { valid: false, error: `GitHub API error: ${err}` };
   }
-}
-
-// ============================================================================
-// Auto-detect allowed user via gh CLI
-// ============================================================================
-
-async function detectAllowedUser(): Promise<string | null> {
-  try {
-    const proc = Bun.spawn(["gh", "api", "user", "--jq", ".login"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const output = await new Response(proc.stdout).text();
-    const exitCode = await proc.exited;
-
-    if (exitCode === 0 && output.trim()) {
-      return output.trim();
-    }
-  } catch {
-    // gh CLI not available or not logged in
-  }
-  return null;
 }
 
 // ============================================================================
@@ -223,22 +205,15 @@ async function proxyRequest(
 async function main() {
   const config = parseArgs();
 
-  // Resolve allowed user
-  let allowedUser = config.allowedUser;
-  if (!allowedUser) {
-    console.log("[init] No --allowed-user specified, detecting via gh CLI...");
-    allowedUser = await detectAllowedUser();
-    if (!allowedUser) {
-      console.error(
-        "[error] Could not detect allowed user. Please either:"
-      );
-      console.error("  1. Login with gh CLI: gh auth login");
-      console.error("  2. Specify explicitly: --allowed-user <username>");
-      process.exit(1);
-    }
+  // Validate allowed users
+  if (config.allowedUsers.length === 0) {
+    console.error("[error] No allowed users specified. Please set:");
+    console.error("  --allowed-users steins-z,friend-a");
+    console.error("  or ALLOWED_USERS=steins-z,friend-a");
+    process.exit(1);
   }
 
-  console.log(`[init] Allowed user: ${allowedUser}`);
+  console.log(`[init] Allowed users: ${config.allowedUsers.join(", ")}`);
   console.log(`[init] Upstream: ${config.upstream}`);
   console.log(`[init] Starting server on port ${config.port}...`);
 
@@ -271,14 +246,14 @@ async function main() {
       // Verify token
       const result = await verifyGitHubToken(
         token,
-        allowedUser!,
+        config.allowedUsers,
         config.cacheTtlMs,
         config.verbose
       );
 
       if (!result.valid) {
         const message = result.username
-          ? `User '${result.username}' is not allowed (expected: ${allowedUser})`
+          ? `User '${result.username}' is not in the whitelist`
           : result.error || "Invalid token";
 
         if (config.verbose) {
