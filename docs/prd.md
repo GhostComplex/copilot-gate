@@ -113,7 +113,7 @@ OpenAI Chat Completions format.
 curl https://your-domain.workers.dev/v1/chat/completions \
   -H "Authorization: Bearer <your_copilot_token>" \
   -H "Content-Type: application/json" \
-  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "claude-opus-4.5", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 ### `POST /v1/messages`

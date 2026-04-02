@@ -27,7 +27,7 @@ pnpm deploy
 curl https://your-worker.workers.dev/v1/chat/completions \
   -H "Authorization: Bearer <your_copilot_token>" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello!"}]}'
+  -d '{"model":"claude-opus-4.5","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
 ## Client Setup
@@ -125,7 +125,7 @@ pnpm dev
 curl http://localhost:8787/v1/chat/completions \
   -H "Authorization: Bearer <your_copilot_token>" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}'
+  -d '{"model":"claude-opus-4.5","messages":[{"role":"user","content":"hi"}]}'
 ```
 
 ### Commands
