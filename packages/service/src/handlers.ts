@@ -3,13 +3,13 @@
  */
 
 import type { Context } from "hono";
-import { streamSSE } from "hono/streaming";
 import {
   getCopilotToken,
   forwardChatCompletions,
   TokenExchangeError,
 } from "./copilot";
 import { extractToken } from "./utils";
+import { proxySSE } from "./sse";
 import {
   translateToOpenAI,
   translateToAnthropic,
@@ -122,42 +122,24 @@ export async function messages(c: Context) {
   }
 
   // 6. Handle streaming response - translate SSE chunks
-  return streamSSE(c, async (stream) => {
-    const state = createStreamState();
-    const reader = upstream.body?.getReader();
-    if (!reader) return;
+  if (!upstream.body) {
+    return c.json({ error: "No upstream body" }, 502);
+  }
 
-    const decoder = new TextDecoder();
-    let buffer = "";
+  const state = createStreamState();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+  return proxySSE(c, upstream.body, (_event, data) => {
+    const trimmed = data.trim();
+    if (trimmed === "[DONE]" || !trimmed) return null;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6);
-        if (data === "[DONE]") break;
-        if (!data.trim()) continue;
-
-        try {
-          const chunk = JSON.parse(data) as OpenAIChatCompletionChunk;
-          const events = translateChunkToAnthropicEvents(chunk, state);
-
-          for (const event of events) {
-            await stream.writeSSE({
-              event: event.type,
-              data: JSON.stringify(event),
-            });
-          }
-        } catch {
-          // Skip malformed chunks
-        }
-      }
+    try {
+      const chunk = JSON.parse(trimmed) as OpenAIChatCompletionChunk;
+      return translateChunkToAnthropicEvents(chunk, state).map((e) => ({
+        event: e.type,
+        data: JSON.stringify(e),
+      }));
+    } catch {
+      return null;
     }
   });
 }
