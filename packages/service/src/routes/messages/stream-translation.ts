@@ -1,46 +1,16 @@
 /**
  * Streaming translation: OpenAI chunks -> Anthropic SSE events.
- *
- * Matches copilot-api's routes/messages/stream-translation.ts
  */
 
 import type {
   AnthropicStreamEvent,
   AnthropicStreamState,
-} from "./anthropic-types";
+} from "./types/anthropic";
+import type { OpenAIChatCompletionChunk } from "./types/openai";
 import { mapOpenAIStopReasonToAnthropic } from "./utils";
 
-// ============================================================================
-// OpenAI Chunk Types
-// ============================================================================
-
-export interface OpenAIChatCompletionChunk {
-  id: string;
-  model: string;
-  choices: {
-    index: number;
-    delta: {
-      role?: "assistant";
-      content?: string;
-      tool_calls?: {
-        index: number;
-        id?: string;
-        function?: {
-          name?: string;
-          arguments?: string;
-        };
-      }[];
-    };
-    finish_reason: "stop" | "length" | "tool_calls" | "content_filter" | null;
-  }[];
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    prompt_tokens_details?: {
-      cached_tokens: number;
-    };
-  };
-}
+// Re-export for external use
+export type { OpenAIChatCompletionChunk };
 
 // ============================================================================
 // Stream State Factory
@@ -140,7 +110,6 @@ export function translateChunkToAnthropicEvents(
   if (delta.tool_calls) {
     for (const toolCall of delta.tool_calls) {
       if (toolCall.id && toolCall.function?.name) {
-        // New tool call starting
         if (state.contentBlockOpen) {
           events.push({
             type: "content_block_stop",
@@ -212,14 +181,4 @@ export function translateChunkToAnthropicEvents(
   }
 
   return events;
-}
-
-export function translateErrorToAnthropicErrorEvent(): AnthropicStreamEvent {
-  return {
-    type: "error",
-    error: {
-      type: "api_error",
-      message: "An unexpected error occurred during streaming.",
-    },
-  };
 }

@@ -6,14 +6,14 @@ import { describe, it, expect } from "vitest";
 import {
   translateToOpenAI,
   translateToAnthropic,
-  type OpenAIChatCompletionResponse,
 } from "../src/routes/messages/non-stream-translation";
 import {
   translateChunkToAnthropicEvents,
   createStreamState,
-  type OpenAIChatCompletionChunk,
 } from "../src/routes/messages/stream-translation";
-import type { AnthropicMessagesPayload } from "../src/routes/messages/anthropic-types";
+import type { OpenAIChatCompletionChunk } from "../src/routes/messages/types/openai";
+import type { AnthropicMessagesPayload } from "../src/routes/messages/types/anthropic";
+import type { OpenAIChatCompletionResponse } from "../src/routes/messages/types/openai";
 
 describe("translateToOpenAI", () => {
   it("translates basic message", () => {

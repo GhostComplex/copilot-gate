@@ -15,7 +15,7 @@ import {
 } from "../../services/copilot";
 import { extractToken } from "../../lib/utils";
 import { transformSSE } from "../../lib/sse";
-import type { AnthropicMessagesPayload } from "./anthropic-types";
+import type { AnthropicMessagesPayload } from "./types/anthropic";
 import {
   translateToOpenAI,
   translateToAnthropic,

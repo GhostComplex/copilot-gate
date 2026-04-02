@@ -1,7 +1,5 @@
 /**
  * Non-streaming translation: Anthropic <-> OpenAI formats.
- *
- * Matches copilot-api's routes/messages/non-stream-translation.ts
  */
 
 import type {
@@ -16,81 +14,18 @@ import type {
   AnthropicResponse,
   AnthropicAssistantContentBlock,
   AnthropicUserContentBlock,
-} from "./anthropic-types";
+} from "./types/anthropic";
+import type {
+  OpenAIMessage,
+  OpenAIContentPart,
+  OpenAITool,
+  OpenAIChatCompletionsPayload,
+  OpenAIChatCompletionResponse,
+} from "./types/openai";
 import { mapOpenAIStopReasonToAnthropic } from "./utils";
 
-// ============================================================================
-// OpenAI Types (subset needed for translation)
-// ============================================================================
-
-interface OpenAIMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | OpenAIContentPart[] | null;
-  tool_calls?: OpenAIToolCall[];
-  tool_call_id?: string;
-}
-
-interface OpenAIContentPart {
-  type: "text" | "image_url";
-  text?: string;
-  image_url?: { url: string };
-}
-
-interface OpenAIToolCall {
-  id: string;
-  type: "function";
-  function: {
-    name: string;
-    arguments: string;
-  };
-}
-
-interface OpenAITool {
-  type: "function";
-  function: {
-    name: string;
-    description?: string;
-    parameters: Record<string, unknown>;
-  };
-}
-
-export interface OpenAIChatCompletionsPayload {
-  model: string;
-  messages: OpenAIMessage[];
-  max_tokens?: number;
-  stop?: string[];
-  stream?: boolean;
-  temperature?: number;
-  top_p?: number;
-  user?: string;
-  tools?: OpenAITool[];
-  tool_choice?:
-    | "auto"
-    | "none"
-    | "required"
-    | { type: "function"; function: { name: string } };
-}
-
-export interface OpenAIChatCompletionResponse {
-  id: string;
-  model: string;
-  choices: {
-    index: number;
-    message: {
-      role: "assistant";
-      content: string | null;
-      tool_calls?: OpenAIToolCall[];
-    };
-    finish_reason: "stop" | "length" | "tool_calls" | "content_filter" | null;
-  }[];
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    prompt_tokens_details?: {
-      cached_tokens: number;
-    };
-  };
-}
+// Re-export for external use
+export type { OpenAIChatCompletionResponse };
 
 // ============================================================================
 // Anthropic -> OpenAI Translation
@@ -114,7 +49,6 @@ export function translateToOpenAI(
 }
 
 function translateModelName(model: string): string {
-  // Subagent requests use a specific model number which Copilot doesn't support
   if (model.startsWith("claude-sonnet-4-")) {
     return model.replace(/^claude-sonnet-4-.*/, "claude-sonnet-4");
   } else if (model.startsWith("claude-opus-")) {
@@ -129,7 +63,6 @@ function translateMessages(
 ): OpenAIMessage[] {
   const result: OpenAIMessage[] = [];
 
-  // Handle system prompt
   if (system) {
     const systemText =
       typeof system === "string"
@@ -138,7 +71,6 @@ function translateMessages(
     result.push({ role: "system", content: systemText });
   }
 
-  // Handle messages
   for (const msg of messages) {
     if (msg.role === "user") {
       result.push(...handleUserMessage(msg));
@@ -158,7 +90,6 @@ function handleUserMessage(message: AnthropicUserMessage): OpenAIMessage[] {
     return result;
   }
 
-  // Separate tool results from other content
   const toolResults = message.content.filter(
     (block): block is AnthropicToolResultBlock => block.type === "tool_result"
   );
@@ -166,7 +97,6 @@ function handleUserMessage(message: AnthropicUserMessage): OpenAIMessage[] {
     (block) => block.type !== "tool_result"
   );
 
-  // Tool results must come first
   for (const block of toolResults) {
     result.push({
       role: "tool",
@@ -175,7 +105,6 @@ function handleUserMessage(message: AnthropicUserMessage): OpenAIMessage[] {
     });
   }
 
-  // Other content becomes user message
   if (otherBlocks.length > 0) {
     result.push({
       role: "user",
@@ -203,7 +132,6 @@ function handleAssistantMessage(
     (block): block is AnthropicThinkingBlock => block.type === "thinking"
   );
 
-  // Combine text and thinking blocks
   const allTextContent = [
     ...textBlocks.map((b) => b.text),
     ...thinkingBlocks.map((b) => b.thinking),
@@ -303,10 +231,8 @@ export function translateToAnthropic(
 ): AnthropicResponse {
   const allTextBlocks: AnthropicTextBlock[] = [];
   const allToolUseBlocks: AnthropicToolUseBlock[] = [];
-  let stopReason: "stop" | "length" | "tool_calls" | "content_filter" | null =
-    response.choices[0]?.finish_reason ?? null;
+  let stopReason = response.choices[0]?.finish_reason ?? null;
 
-  // Guard against empty/missing choices
   if (!response.choices?.length) {
     return {
       id: response.id,
@@ -323,7 +249,6 @@ export function translateToAnthropic(
     };
   }
 
-  // Process all choices
   for (const choice of response.choices) {
     if (choice.message.content) {
       allTextBlocks.push({ type: "text", text: choice.message.content });
@@ -345,7 +270,6 @@ export function translateToAnthropic(
       }
     }
 
-    // Prioritize tool_calls finish reason
     if (choice.finish_reason === "tool_calls") {
       stopReason = choice.finish_reason;
     }

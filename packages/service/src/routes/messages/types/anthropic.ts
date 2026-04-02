@@ -1,7 +1,5 @@
 /**
  * Anthropic API Types
- *
- * Matches copilot-api's routes/messages/anthropic-types.ts
  */
 
 // ============================================================================
