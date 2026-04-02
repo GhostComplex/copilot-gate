@@ -1,0 +1,21 @@
+{
+  "name": "@copilot-shadow/cli",
+  "version": "0.1.0",
+  "description": "Copilot Shadow CLI - OAuth Device Flow authentication",
+  "bin": {
+    "copilot-shadow": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src"
+  },
+  "devDependencies": {}
+}

@@ -4,54 +4,104 @@
 
 ## Overview
 
-A stateless API proxy that forwards requests to GitHub Copilot. Each user brings their own GitHub Token — no registration, no storage, no dashboard.
+A **stateless** API proxy that forwards requests to GitHub Copilot. Users authenticate via OAuth Device Flow, get a token, and pass it with every request — no server-side storage.
 
-**~300 lines of code. 5-minute deployment.**
+**Two components:**
+- **`copilot-shadow`** — Stateless API proxy (CF Workers)
+- **`copilot-shadow auth`** — CLI to obtain OAuth token via Device Flow
 
-## How It Works
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Your Computer                           │
-│                                                             │
-│  .claude/settings.json:                                     │
-│  {                                                          │
-│    "ANTHROPIC_BASE_URL": "https://your-domain.com",        │
-│    "ANTHROPIC_AUTH_TOKEN": "<your-github-token>"           │
-│  }                                                          │
+│                        First Time Setup                      │
+│                                                              │
+│  $ npx copilot-shadow auth                                  │
+│                                                              │
+│  → Visit https://github.com/login/device                    │
+│  → Enter code: XXXX-XXXX                                    │
+│  → Token saved to ~/.copilot-shadow/token                   │
+│                                                              │
+│  Your OAuth Token: gho_xxxxxxxxxxxx                         │
 └─────────────────────────────────────────────────────────────┘
-                              │
-                              │ POST /v1/messages
-                              │ Authorization: Bearer <github-token>
-                              ▼
+
 ┌─────────────────────────────────────────────────────────────┐
-│                     Copilot Shadow                          │
-│                                                             │
-│  1. Extract GitHub Token from Authorization header          │
-│  2. Exchange for Copilot Token (in-memory cache, ~30min)   │
-│  3. Forward request to api.githubcopilot.com               │
-│  4. Stream response back                                    │
-│                                                             │
-│  No persistent storage. In-memory cache only.              │
+│                        Every Request                         │
+│                                                              │
+│  Client (Claude Code, etc.)                                 │
+│    Authorization: Bearer gho_xxxxxxxxxxxx                   │
+│                              │                               │
+│                              ▼                               │
+│  Copilot Shadow (CF Workers)                                │
+│    1. OAuth Token from header                               │
+│    2. Exchange for Copilot Token (cached ~30min)            │
+│    3. Forward to api.githubcopilot.com                      │
+│                              │                               │
+│                              ▼                               │
+│  GitHub Copilot API                                         │
 └─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              https://api.githubcopilot.com                  │
-└─────────────────────────────────────────────────────────────┘
+```
+
+## Why Device Flow?
+
+GitHub's `/copilot_internal/v2/token` API **only accepts OAuth tokens**, not Personal Access Tokens (PAT).
+
+| Token Type | Works with Copilot API? |
+|------------|------------------------|
+| Classic PAT (`ghp_xxx`) | ❌ 404 |
+| Fine-grained PAT (`github_pat_xxx`) | ❌ 404 |
+| OAuth Token (`gho_xxx`) | ✅ |
+| `gh auth token` (gh CLI's OAuth) | ✅ (but wrong scopes) |
+
+The CLI uses GitHub's official Copilot OAuth App (`Iv1.b507a08c87ecfe98`) with minimal `read:user` scope.
+
+## Project Structure
+
+```
+copilot-shadow/
+├── packages/
+│   ├── service/              # CF Workers API proxy
+│   │   ├── src/
+│   │   │   ├── index.ts      # Hono app entry
+│   │   │   ├── copilot.ts    # Token exchange + headers
+│   │   │   ├── handlers.ts   # Route handlers
+│   │   │   └── utils.ts      # Helpers
+│   │   ├── tests/
+│   │   ├── wrangler.toml
+│   │   └── package.json
+│   │
+│   └── cli/                  # Auth CLI
+│       ├── src/
+│       │   ├── index.ts      # CLI entry
+│       │   └── auth.ts       # Device Flow logic
+│       └── package.json
+│
+├── package.json              # Workspace root
+└── docs/
+    └── prd.md
 ```
 
 ## Core Features
 
+### Service (`packages/service`)
+
 | Feature | Description |
 |---------|-------------|
-| **Stateless** | No database, no KV. In-memory cache only (not persisted). |
-| **Multi-tenant** | Anyone can use with their own GitHub Token & Copilot subscription. |
-| **Zero Config** | No API keys to generate, no registration, no dashboard. |
+| **Stateless** | No database, no KV. In-memory cache only. |
+| **Multi-tenant** | Anyone can use with their own OAuth token |
 | **OpenAI Compatible** | `/v1/chat/completions` endpoint |
 | **Anthropic Compatible** | `/v1/messages` endpoint |
 | **Streaming** | Full SSE streaming support |
-| **Token Caching** | In-memory Copilot token cache (~30min), reduces latency |
+| **Token Caching** | In-memory Copilot token cache (~30min) |
+
+### CLI (`packages/cli`)
+
+| Feature | Description |
+|---------|-------------|
+| **Device Flow** | `npx copilot-shadow auth` |
+| **Token Output** | Prints token to stdout (pipe-friendly) |
+| **Optional Save** | `--save` writes to `~/.copilot-shadow/token` |
+| **Refresh** | `npx copilot-shadow auth --refresh` |
 
 ## API Endpoints
 
@@ -60,8 +110,8 @@ A stateless API proxy that forwards requests to GitHub Copilot. Each user brings
 OpenAI Chat Completions format.
 
 ```bash
-curl https://your-domain.com/v1/chat/completions \
-  -H "Authorization: Bearer <github-token>" \
+curl https://your-domain.workers.dev/v1/chat/completions \
+  -H "Authorization: Bearer gho_xxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
   -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
@@ -71,8 +121,8 @@ curl https://your-domain.com/v1/chat/completions \
 Anthropic Messages format.
 
 ```bash
-curl https://your-domain.com/v1/messages \
-  -H "Authorization: Bearer <github-token>" \
+curl https://your-domain.workers.dev/v1/messages \
+  -H "Authorization: Bearer gho_xxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
   -d '{"model": "claude-sonnet-4-20250514", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
 ```
@@ -85,111 +135,117 @@ Returns available models.
 
 Health check.
 
-## Directory Structure
+## CLI Usage
 
-```
-copilot-shadow/
-├── src/
-│   ├── app.ts             # Hono app + routes (~100 lines)
-│   ├── copilot.ts         # Token exchange + forwarding (~100 lines)
-│   └── transform.ts       # Anthropic ↔ OpenAI conversion (~100 lines)
-├── worker.ts              # CF Workers entry
-├── wrangler.toml
-├── package.json
-└── README.md
-```
+```bash
+# First time: get OAuth token
+npx copilot-shadow auth
+# → Opens browser for GitHub authorization
+# → Prints: gho_xxxxxxxxxxxx
 
-**Total: ~300 lines** (excluding config)
+# Save token locally
+npx copilot-shadow auth --save
+# → Saved to ~/.copilot-shadow/token
+
+# Show saved token
+npx copilot-shadow token
+
+# Refresh token
+npx copilot-shadow auth --refresh
+```
 
 ## Security
 
 | Aspect | How It's Handled |
 |--------|------------------|
+| **OAuth Scope** | `read:user` only — minimal permissions |
+| **Token Storage** | User's machine (`~/.copilot-shadow/token`) or env var |
+| **Server Storage** | None — stateless, in-memory cache only |
 | **Transport** | HTTPS enforced by CF Workers |
-| **Token Storage** | In-memory only, cleared on worker recycle |
-| **Token in Logs** | Never logged |
-| **Revocation** | User revokes directly on GitHub |
-| **Blast Radius** | Token leak affects only that user |
+| **Revocation** | User revokes at github.com/settings/applications |
+
+### Threat Model
+
+| Threat | Mitigation |
+|--------|------------|
+| Server breach | Nothing to steal — no tokens stored |
+| Request interception | HTTPS/TLS |
+| Token leak (user side) | User can revoke on GitHub immediately |
+| Unauthorized usage | Each user brings own token |
 
 ## Deployment
 
-### Cloudflare Workers (Recommended)
+### Cloudflare Workers
 
 ```bash
-git clone https://github.com/GhostComplex/copilot-shadow
-cd copilot-shadow
+cd packages/service
 wrangler deploy
 ```
 
-No secrets to configure. That's it.
-
-### Azure Functions
-
-```bash
-func azure functionapp publish copilot-shadow
-```
+No secrets needed. The service is stateless.
 
 ## Client Setup
 
 ### Claude Code
 
-Create `.claude/settings.json`:
-
 ```json
+// .claude/settings.json
 {
   "env": {
     "ANTHROPIC_BASE_URL": "https://copilot-shadow.your-domain.workers.dev",
-    "ANTHROPIC_AUTH_TOKEN": "<your-github-token>"
+    "ANTHROPIC_AUTH_TOKEN": "gho_xxxxxxxxxxxx"
   }
 }
 ```
 
-### Getting a GitHub Token
+### OpenAI SDK
 
-Two options:
+```ts
+import OpenAI from 'openai';
 
-**Option 1: Device Flow (Recommended — minimal permissions)**
-
-```bash
-npx copilot-shadow auth
-# Opens browser, you authorize, get token with only read:user scope
+const client = new OpenAI({
+  baseURL: 'https://copilot-shadow.your-domain.workers.dev/v1',
+  apiKey: 'gho_xxxxxxxxxxxx',
+});
 ```
-
-**Option 2: GitHub Settings**
-
-1. Go to https://github.com/settings/tokens
-2. Generate new token (classic)
-3. No special scopes needed if you have Copilot subscription
 
 ## Milestones
 
-### M0: Core (~200 lines)
+### M0: Core Service (~250 lines) ✅
 
-- [ ] Hono app skeleton
-- [ ] GitHub Token → Copilot Token exchange (with in-memory cache)
-- [ ] `/v1/chat/completions` passthrough
-- [ ] `/health` endpoint
-- [ ] CF Workers deployment
+- [x] Hono app skeleton
+- [x] OAuth Token → Copilot Token exchange
+- [x] In-memory token cache (30min, refresh 5min early)
+- [x] `/v1/chat/completions` passthrough
+- [x] `/health` endpoint
+- [x] GitHub headers (Editor-Version, etc.)
 
-### M1: Anthropic + Models (~100 lines)
+### M1: Auth CLI (~100 lines)
+
+- [ ] `npx copilot-shadow auth` — Device Flow
+- [ ] `--save` flag to persist token
+- [ ] `npx copilot-shadow token` — show saved token
+- [ ] Monorepo setup (pnpm workspaces)
+
+### M2: Anthropic Format (~100 lines)
 
 - [ ] `/v1/messages` endpoint
 - [ ] Anthropic ↔ OpenAI message conversion
 - [ ] `/v1/models` endpoint
-- [ ] Streaming optimization
+- [ ] Model name mapping (claude-* → copilot models)
 
-### M2: Polish
+### M3: Polish
 
-- [ ] `npx copilot-shadow auth` CLI helper
+- [ ] Error messages & troubleshooting
 - [ ] README documentation
-- [ ] Error messages
+- [ ] npm publish (`npx copilot-shadow`)
 
 ## Why This Design?
 
-| Design Choice | Reason |
-|---------------|--------|
-| **No storage** | Simpler, more secure, no database to breach |
-| **Token pass-through** | Users control their own tokens |
-| **No dashboard** | Nothing to manage |
-| **Stateless** | Scales infinitely, no cold start issues |
-| **Multi-tenant by default** | Anyone can use with their own subscription |
+| Choice | Reason |
+|--------|--------|
+| **Stateless server** | No database to breach, infinitely scalable |
+| **CLI for auth** | Token stays on user's machine |
+| **Device Flow** | Only way to get OAuth token that works with Copilot |
+| **Monorepo** | Share types between CLI and service |
+| **No dashboard** | Nothing to manage, nothing to secure |
