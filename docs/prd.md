@@ -22,14 +22,14 @@ A **stateless** API proxy that forwards requests to GitHub Copilot. Users authen
 │  → Enter code: XXXX-XXXX                                    │
 │  → Token saved to ~/.copilot-shadow/token                   │
 │                                                              │
-│  Your OAuth Token: gho_xxxxxxxxxxxx                         │
+│  Your OAuth Token: <your_copilot_token>                         │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
 │                        Every Request                         │
 │                                                              │
 │  Client (Claude Code, etc.)                                 │
-│    Authorization: Bearer gho_xxxxxxxxxxxx                   │
+│    Authorization: Bearer <your_copilot_token>                   │
 │                              │                               │
 │                              ▼                               │
 │  Copilot Shadow (CF Workers)                                │
@@ -50,7 +50,7 @@ GitHub's `/copilot_internal/v2/token` API **only accepts OAuth tokens**, not Per
 |------------|------------------------|
 | Classic PAT (`ghp_xxx`) | ❌ 404 |
 | Fine-grained PAT (`github_pat_xxx`) | ❌ 404 |
-| OAuth Token (`gho_xxx`) | ✅ |
+| OAuth Token (`ghu_xxx`) | ✅ |
 | `gh auth token` (gh CLI's OAuth) | ✅ (but wrong scopes) |
 
 The CLI uses GitHub's official Copilot OAuth App (`Iv1.b507a08c87ecfe98`) with minimal `read:user` scope.
@@ -111,7 +111,7 @@ OpenAI Chat Completions format.
 
 ```bash
 curl https://your-domain.workers.dev/v1/chat/completions \
-  -H "Authorization: Bearer gho_xxxxxxxxxxxx" \
+  -H "Authorization: Bearer <your_copilot_token>" \
   -H "Content-Type: application/json" \
   -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
@@ -122,7 +122,7 @@ Anthropic Messages format.
 
 ```bash
 curl https://your-domain.workers.dev/v1/messages \
-  -H "Authorization: Bearer gho_xxxxxxxxxxxx" \
+  -H "Authorization: Bearer <your_copilot_token>" \
   -H "Content-Type: application/json" \
   -d '{"model": "claude-sonnet-4-20250514", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
 ```
@@ -141,7 +141,7 @@ Health check.
 # First time: get OAuth token
 npx copilot-shadow auth
 # → Opens browser for GitHub authorization
-# → Prints: gho_xxxxxxxxxxxx
+# → Prints: <your_copilot_token>
 
 # Save token locally
 npx copilot-shadow auth --save
@@ -193,7 +193,7 @@ No secrets needed. The service is stateless.
 {
   "env": {
     "ANTHROPIC_BASE_URL": "https://copilot-shadow.your-domain.workers.dev",
-    "ANTHROPIC_AUTH_TOKEN": "gho_xxxxxxxxxxxx"
+    "ANTHROPIC_AUTH_TOKEN": "<your_copilot_token>"
   }
 }
 ```
@@ -205,7 +205,7 @@ import OpenAI from 'openai';
 
 const client = new OpenAI({
   baseURL: 'https://copilot-shadow.your-domain.workers.dev/v1',
-  apiKey: 'gho_xxxxxxxxxxxx',
+  apiKey: '<your_copilot_token>',
 });
 ```
 

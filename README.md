@@ -10,7 +10,7 @@ Turn your GitHub Copilot subscription into your own API endpoint.
 npx copilot-shadow auth
 ```
 
-This opens GitHub Device Flow — enter the code at github.com/login/device, then you'll get a token like `gho_xxxxxxxxxxxx`.
+This opens GitHub Device Flow — enter the code at github.com/login/device, then you'll get a token like `<your_copilot_token>`.
 
 ### 2. Deploy to Cloudflare Workers
 
@@ -25,7 +25,7 @@ pnpm deploy
 
 ```bash
 curl https://your-worker.workers.dev/v1/chat/completions \
-  -H "Authorization: Bearer gho_xxxxxxxxxxxx" \
+  -H "Authorization: Bearer <your_copilot_token>" \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello!"}]}'
 ```
@@ -40,7 +40,7 @@ Create `.claude/settings.json`:
 {
   "env": {
     "ANTHROPIC_BASE_URL": "https://your-worker.workers.dev",
-    "ANTHROPIC_AUTH_TOKEN": "gho_xxxxxxxxxxxx"
+    "ANTHROPIC_AUTH_TOKEN": "<your_copilot_token>"
   }
 }
 ```
@@ -52,7 +52,7 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   baseURL: "https://your-worker.workers.dev/v1",
-  apiKey: "gho_xxxxxxxxxxxx",
+  apiKey: "<your_copilot_token>",
 });
 ```
 
@@ -123,7 +123,7 @@ pnpm dev
 
 # Test
 curl http://localhost:8787/v1/chat/completions \
-  -H "Authorization: Bearer gho_your_token" \
+  -H "Authorization: Bearer <your_copilot_token>" \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}'
 ```
