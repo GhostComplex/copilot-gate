@@ -3,7 +3,7 @@
  */
 
 import { Hono } from "hono";
-import { handleChatCompletion } from "./routes/chat-completions";
+import { handleChatCompletion } from "./routes/chat-completions/handler";
 import { handleMessages } from "./routes/messages/handler";
 
 const app = new Hono();

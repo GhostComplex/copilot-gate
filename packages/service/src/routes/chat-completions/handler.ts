@@ -7,8 +7,8 @@ import {
   getCopilotToken,
   createChatCompletions,
   TokenExchangeError,
-} from "../services/copilot";
-import { extractToken } from "../lib/utils";
+} from "../../services/copilot";
+import { extractToken } from "../../lib/utils";
 
 export async function handleChatCompletion(c: Context) {
   // 1. Extract GitHub token
