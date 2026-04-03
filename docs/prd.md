@@ -1,4 +1,4 @@
-# Copilot Gate PRD
+# Copilot Portal PRD
 
 > Turn your GitHub Copilot subscription into your own API endpoint.
 
@@ -7,8 +7,8 @@
 A **stateless** API proxy that forwards requests to GitHub Copilot. Users authenticate via OAuth Device Flow, get a token, and pass it with every request — no server-side storage.
 
 **Two components:**
-- **`@copilot-gate/service`** — Stateless API proxy (CF Workers)
-- **`@copilot-gate/cli`** — CLI to obtain OAuth token via Device Flow
+- **`@copilot-portal/service`** — Stateless API proxy (CF Workers)
+- **`@copilot-portal/cli`** — CLI to obtain OAuth token via Device Flow
 
 ## Architecture
 
@@ -16,7 +16,7 @@ A **stateless** API proxy that forwards requests to GitHub Copilot. Users authen
 ┌─────────────────────────────────────────────────────────────┐
 │                        First Time Setup                      │
 │                                                              │
-│  $ npx copilot-gate auth                                  │
+│  $ npx copilot-portal auth                                  │
 │                                                              │
 │  → Visit https://github.com/login/device                    │
 │  → Enter code: XXXX-XXXX                                    │
@@ -31,7 +31,7 @@ A **stateless** API proxy that forwards requests to GitHub Copilot. Users authen
 │    Authorization: Bearer <your_copilot_token>               │
 │                              │                               │
 │                              ▼                               │
-│  Copilot Gate (CF Workers)                                │
+│  Copilot Portal (CF Workers)                                │
 │    1. OAuth Token from header                               │
 │    2. Exchange for Copilot Token (cached ~30min)            │
 │    3. Forward to api.githubcopilot.com                      │
@@ -62,6 +62,7 @@ The CLI uses GitHub's official Copilot OAuth App (`Iv1.b507a08c87ecfe98`) with m
 | **Stateless** | No database, no KV. In-memory cache only. |
 | **Multi-tenant** | Anyone can use with their own OAuth token |
 | **OpenAI Compatible** | `/v1/chat/completions` endpoint |
+| **Anthropic Compatible** | `/v1/messages` endpoint |
 | **Streaming** | Full SSE streaming support |
 | **Token Caching** | In-memory Copilot token cache (~30min) |
 
@@ -69,15 +70,17 @@ The CLI uses GitHub's official Copilot OAuth App (`Iv1.b507a08c87ecfe98`) with m
 
 | Feature | Description |
 |---------|-------------|
-| **Device Flow** | `npx copilot-gate auth` |
+| **Device Flow** | `npx copilot-portal auth` |
 | **Token Output** | Prints token to stdout |
-| **Optional Save** | `--save` writes to `~/.copilot-gate/token` |
+| **Optional Save** | `--save` writes to `~/.copilot-portal/token` |
 
 ## API Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
 | `POST /v1/chat/completions` | OpenAI Chat Completions format |
+| `POST /v1/messages` | Anthropic Messages format |
+| `GET /v1/models` | List available models |
 | `GET /health` | Health check |
 
 ## Security
@@ -102,18 +105,19 @@ The CLI uses GitHub's official Copilot OAuth App (`Iv1.b507a08c87ecfe98`) with m
 
 ### M1: Auth CLI ✅
 
-- [x] `npx copilot-gate auth` — Device Flow
+- [x] `npx copilot-portal auth` — Device Flow
 - [x] `--save` flag to persist token
-- [x] `npx copilot-gate token` — show saved token
+- [x] `npx copilot-portal token` — show saved token
 - [x] Monorepo setup (pnpm workspaces)
 
-### M2: Anthropic Format
+### M2: Anthropic Format ✅
 
-- [ ] `/v1/messages` endpoint
-- [ ] Anthropic ↔ OpenAI message conversion
-- [ ] `/v1/models` endpoint
+- [x] `/v1/messages` endpoint
+- [x] Anthropic ↔ OpenAI message conversion
+- [x] `/v1/models` endpoint
 
 ### M3: Polish
 
-- [ ] npm publish (`npx copilot-gate`)
+- [ ] npm publish (`npx copilot-portal`)
 - [ ] Azure Functions / Container Apps support
+- [ ] `/v1/embeddings` endpoint (OpenAI Embeddings API)

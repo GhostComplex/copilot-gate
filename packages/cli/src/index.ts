@@ -37,36 +37,36 @@ async function showToken() {
   const { homedir } = await import("node:os");
   const { join } = await import("node:path");
 
-  const tokenPath = join(homedir(), ".copilot-gate", "token");
+  const tokenPath = join(homedir(), ".copilot-portal", "token");
 
   try {
     const token = (await readFile(tokenPath, "utf-8")).trim();
     console.log(token);
   } catch {
-    console.error("No saved token found. Run: npx copilot-gate auth --save");
+    console.error("No saved token found. Run: npx copilot-portal auth --save");
     process.exit(1);
   }
 }
 
 function printHelp() {
   console.log(`
-copilot-gate - Turn your GitHub Copilot subscription into your own API endpoint
+copilot-portal - Turn your GitHub Copilot subscription into your own API endpoint
 
 USAGE:
-  npx copilot-gate <command> [options]
+  npx copilot-portal <command> [options]
 
 COMMANDS:
   auth          Authenticate with GitHub (Device Flow)
   token         Show saved OAuth token
 
 OPTIONS (auth):
-  --save        Save token to ~/.copilot-gate/token
+  --save        Save token to ~/.copilot-portal/token
   --refresh     Force re-authentication
 
 EXAMPLES:
-  npx copilot-gate auth              # Get OAuth token (prints to stdout)
-  npx copilot-gate auth --save       # Get and save token
-  npx copilot-gate token             # Show saved token
+  npx copilot-portal auth              # Get OAuth token (prints to stdout)
+  npx copilot-portal auth --save       # Get and save token
+  npx copilot-portal token             # Show saved token
 `);
 }
 

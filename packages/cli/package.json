@@ -1,9 +1,9 @@
 {
-  "name": "@copilot-gate/cli",
+  "name": "@copilot-portal/cli",
   "version": "0.1.0",
-  "description": "Copilot Gate CLI - OAuth Device Flow authentication",
+  "description": "Copilot Portal CLI - OAuth Device Flow authentication",
   "bin": {
-    "copilot-gate": "./dist/index.js"
+    "copilot-portal": "./dist/index.js"
   },
   "files": [
     "dist"

@@ -1,18 +1,25 @@
 /**
- * Copilot Gate — Hono app on Cloudflare Workers.
- *
- * Routes:
- *   GET  /health                  → health check
- *   POST /v1/chat/completions     → OpenAI-compatible chat completions passthrough
+ * Copilot Portal - API entry point
  */
 
 import { Hono } from "hono";
-import { health, chatCompletions, notFound } from "./handlers";
+import { handleChatCompletion } from "./routes/chat-completions/handler";
+import { handleMessages } from "./routes/messages/handler";
+import { handleModels } from "./routes/models/handler";
 
 const app = new Hono();
 
-app.get("/health", health);
-app.post("/v1/chat/completions", chatCompletions);
-app.all("*", notFound);
+// Health check
+app.get("/health", (c) => c.json({ status: "ok" }));
+
+// OpenAI-compatible endpoints
+app.post("/v1/chat/completions", handleChatCompletion);
+app.get("/v1/models", handleModels);
+
+// Anthropic-compatible endpoints
+app.post("/v1/messages", handleMessages);
+
+// 404 fallback
+app.all("*", (c) => c.json({ error: "Not found" }, 404));
 
 export default app;
