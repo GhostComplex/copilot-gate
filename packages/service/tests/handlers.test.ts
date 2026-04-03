@@ -16,10 +16,16 @@ vi.mock("../src/services/copilot", () => ({
   },
 }));
 
-import { getCopilotToken, createChatCompletions, TokenExchangeError } from "../src/services/copilot";
+import {
+  getCopilotToken,
+  createChatCompletions,
+  TokenExchangeError,
+} from "../src/services/copilot";
 
 const mockGetCopilotToken = getCopilotToken as ReturnType<typeof vi.fn>;
-const mockCreateChatCompletions = createChatCompletions as ReturnType<typeof vi.fn>;
+const mockCreateChatCompletions = createChatCompletions as ReturnType<
+  typeof vi.fn
+>;
 
 describe("GET /health", () => {
   it("returns ok status", async () => {
