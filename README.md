@@ -12,22 +12,51 @@ npx copilot-portal auth
 
 This opens GitHub Device Flow — enter the code at github.com/login/device, then you'll get a token like `<your_copilot_token>`.
 
-### 2. Deploy to Cloudflare Workers
+### 2. Deploy
+
+#### Option A. Cloudflare Workers
 
 ```bash
 git clone https://github.com/GhostComplex/copilot-portal
 cd copilot-portal
 pnpm install
 
-# Deploy (from service directory)
-cd packages/service
-npx wrangler deploy
+# Deploy Cloudflare Workers
+pnpm deploy:cf
 ```
 
-### 3. Use It
+#### Option B. Azure Web App (Docker)
+
+Use the included `Dockerfile` with Azure Web App for Containers. The smoothest setup is:
+
+1. Create a Linux Web App and an Azure Container Registry.
+2. Configure the Web App health check path as `/health`.
+3. Add the required GitHub repository secrets.
+4. Run the `Deploy Azure Web App Container` workflow manually.
+
+Required GitHub secrets:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `AZURE_RESOURCE_GROUP`
+- `AZURE_WEBAPP_NAME`
+- `ACR_LOGIN_SERVER`
+- `ACR_USERNAME`
+- `ACR_PASSWORD`
+
+The workflow builds the image from the repository root, pushes it to ACR, and updates the Web App container image.
+
+### 3. Test It
+
+Replace `YOUR_BASE_URL` with your deployed service URL, for example:
+
+- `https://your-worker.workers.dev`
+- `https://your-app.azurewebsites.net`
+- `https://api.yourdomain.com`
 
 ```bash
-curl https://your-worker.workers.dev/v1/chat/completions \
+curl YOUR_BASE_URL/v1/chat/completions \
   -H "Authorization: Bearer <your_copilot_token>" \
   -H "Content-Type: application/json" \
   -d '{"model":"claude-opus-4.5","messages":[{"role":"user","content":"Hello!"}]}'
@@ -42,7 +71,7 @@ Create `.claude/settings.json`:
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://your-worker.workers.dev",
+    "ANTHROPIC_BASE_URL": "YOUR_BASE_URL",
     "ANTHROPIC_AUTH_TOKEN": "<your_copilot_token>"
   }
 }
@@ -54,12 +83,14 @@ Create `.claude/settings.json`:
 import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "https://your-worker.workers.dev/v1",
+  baseURL: "YOUR_BASE_URL/v1",
   apiKey: "<your_copilot_token>",
 });
 ```
 
 ## API Endpoints
+
+All endpoints are relative to `YOUR_BASE_URL`.
 
 | Endpoint | Description |
 |----------|-------------|
@@ -92,66 +123,56 @@ Request with token → Service exchanges for Copilot Token (cached ~30min)
 ```
 copilot-portal/
 ├── packages/
-│   ├── service/     # CF Workers API proxy
+│   ├── core/        # Shared API routes and Copilot proxy logic
+│   ├── cf-workers/  # Cloudflare Workers host
+│   ├── node-service/ # Node.js host for Azure/App Service
 │   └── cli/         # OAuth Device Flow CLI
 └── docs/
     └── prd.md       # Product Requirements Document
 ```
 
-## Contributing
+## Development
 
-### Prerequisites
+### Workspace Setup
 
 - Node.js 22+
 - pnpm 10+
 
-### Development Setup
-
 ```bash
-# Clone and install
 git clone https://github.com/GhostComplex/copilot-portal
 cd copilot-portal
 pnpm install
-
-# Build CLI
-pnpm --filter copilot-portal build
-
-# Get OAuth token (one-time)
-node packages/cli/dist/index.js auth
-# → Save the token somewhere
-
-# Start service dev server
-pnpm dev
-# → Running at http://localhost:8787
-
-# Test
-curl http://localhost:8787/v1/chat/completions \
-  -H "Authorization: Bearer <your_copilot_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"claude-opus-4.5","messages":[{"role":"user","content":"hi"}]}'
+pnpm build
 ```
 
-### Commands
+### Workspace Commands
 
 | Command | Description |
 |---------|-------------|
-| `pnpm dev` | Start service dev server |
-| `cd packages/service && npx wrangler deploy` | Deploy to Cloudflare Workers |
-| `pnpm test` | Run tests |
+| `pnpm build` | Build all workspace packages |
 | `pnpm lint` | Lint all packages |
+| `pnpm format:check` | Check formatting across packages |
 | `pnpm typecheck` | Type check all packages |
+| `pnpm test` | Run tests for packages that expose them |
+| `pnpm test:coverage` | Run coverage for packages that expose it |
+| `pnpm dev` | Start Node service dev server |
+| `pnpm dev:cf` | Start Cloudflare Workers dev server |
+| `pnpm deploy:cf` | Deploy to Cloudflare Workers |
 
-### Testing CLI Locally
+### Run CLI from local
 
 ```bash
-# Build
-pnpm --filter copilot-portal build
-
-# Run
-node packages/cli/dist/index.js auth          # Get token
-node packages/cli/dist/index.js auth --save   # Get and save token
-node packages/cli/dist/index.js token         # Show saved token
+cd packages/cli
+node dist/index.js --help
 ```
+
+### Package Docs
+
+- [packages/cli/README.md](packages/cli/README.md): npm package usage
+- [packages/core/README.md](packages/core/README.md): shared routes, tests, and translation logic
+- [packages/cf-workers/README.md](packages/cf-workers/README.md): Cloudflare Workers runtime and deployment
+- [packages/node-service/README.md](packages/node-service/README.md): Node runtime, Docker, and Azure Web App notes
+- [docs/prd.md](docs/prd.md): product and architecture context
 
 ## License
 
