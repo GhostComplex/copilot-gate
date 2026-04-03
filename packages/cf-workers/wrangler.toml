@@ -4,3 +4,7 @@ compatibility_date = "2025-04-01"
 
 [observability]
 enabled = true
+
+# Resolve workspace dependency
+[alias]
+"@copilot-portal/core" = "../core/src/index.ts"
