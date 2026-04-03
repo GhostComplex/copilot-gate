@@ -207,3 +207,14 @@ export async function createChatCompletions(
     body,
   });
 }
+
+/**
+ * Get available models from Copilot API.
+ */
+export async function getModels(copilotToken: string): Promise<Response> {
+  const headers = await buildCopilotHeaders(copilotToken);
+  return fetch(`${COPILOT_API_BASE_URL}/models`, {
+    method: "GET",
+    headers,
+  });
+}

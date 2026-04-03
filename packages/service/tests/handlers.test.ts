@@ -5,6 +5,7 @@ import app from "../src/index";
 vi.mock("../src/services/copilot", () => ({
   getCopilotToken: vi.fn(),
   createChatCompletions: vi.fn(),
+  getModels: vi.fn(),
   clearTokenCache: vi.fn(),
   isTokenValid: vi.fn(),
   TokenExchangeError: class TokenExchangeError extends Error {
@@ -19,6 +20,7 @@ vi.mock("../src/services/copilot", () => ({
 import {
   getCopilotToken,
   createChatCompletions,
+  getModels,
   TokenExchangeError,
 } from "../src/services/copilot";
 
@@ -26,6 +28,7 @@ const mockGetCopilotToken = getCopilotToken as ReturnType<typeof vi.fn>;
 const mockCreateChatCompletions = createChatCompletions as ReturnType<
   typeof vi.fn
 >;
+const mockGetModels = getModels as ReturnType<typeof vi.fn>;
 
 describe("GET /health", () => {
   it("returns ok status", async () => {
@@ -36,15 +39,41 @@ describe("GET /health", () => {
 });
 
 describe("GET /v1/models", () => {
-  it("returns list of models", async () => {
+  beforeEach(() => {
+    mockGetCopilotToken.mockReset();
+    mockGetModels.mockReset();
+  });
+
+  it("returns 401 without auth header", async () => {
     const res = await app.request("/v1/models");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns list of models with valid auth", async () => {
+    mockGetCopilotToken.mockResolvedValue("copilot-token");
+    mockGetModels.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          object: "list",
+          data: [
+            { id: "claude-opus-4", object: "model", vendor: "anthropic" },
+            { id: "gpt-4o", object: "model", vendor: "openai" },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+
+    const res = await app.request("/v1/models", {
+      headers: { Authorization: "Bearer ghu_test" },
+    });
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.object).toBe("list");
     expect(data.data).toContainEqual({
       id: "claude-opus-4",
       object: "model",
-      owned_by: "anthropic",
+      vendor: "anthropic",
     });
   });
 });
