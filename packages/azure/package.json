@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@azure/functions": "4.7.0",
+    "@copilot-portal/core": "workspace:*",
     "@marplex/hono-azurefunc-adapter": "1.0.1",
     "hono": "4.12.9"
   },
