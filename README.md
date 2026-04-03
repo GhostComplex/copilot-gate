@@ -166,6 +166,38 @@ cd packages/cli
 node dist/index.js --help
 ```
 
+### Publish CLI to npm
+
+The npm package published from this repo is the CLI package in `packages/cli`.
+
+1. Log in to npm:
+
+```bash
+npm login
+```
+
+2. Build the CLI package from the workspace root:
+
+```bash
+pnpm --filter copilot-portal build
+```
+
+3. Optionally inspect the publish contents:
+
+```bash
+cd packages/cli
+npm pack --dry-run
+```
+
+4. Publish the package:
+
+```bash
+cd packages/cli
+npm publish
+```
+
+If npm rejects the publish because the version already exists, bump the version in `packages/cli/package.json` and publish again.
+
 ### Package Docs
 
 - [packages/cli/README.md](packages/cli/README.md): npm package usage
