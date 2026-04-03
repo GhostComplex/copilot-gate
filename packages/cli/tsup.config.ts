@@ -1,12 +1,12 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/server.ts"],
-  format: ["esm"],
+  entry: ["src/index.ts"],
+  format: ["cjs"],
   platform: "node",
   target: "node22",
   outDir: "dist",
+  bundle: true,
+  splitting: false,
   clean: true,
-  minify: false,
-  noExternal: ["@copilot-portal/core", "@hono/node-server"],
 });

@@ -8,22 +8,22 @@ import { handleMessages } from "./routes/messages/handler";
 import { handleModels } from "./routes/models/handler";
 
 export function createApp() {
-	const app = new Hono();
+  const app = new Hono();
 
-	// Health check
-	app.get("/health", (c) => c.json({ status: "ok" }));
+  // Health check
+  app.get("/health", (c) => c.json({ status: "ok" }));
 
-	// OpenAI-compatible endpoints
-	app.post("/v1/chat/completions", handleChatCompletion);
-	app.get("/v1/models", handleModels);
+  // OpenAI-compatible endpoints
+  app.post("/v1/chat/completions", handleChatCompletion);
+  app.get("/v1/models", handleModels);
 
-	// Anthropic-compatible endpoints
-	app.post("/v1/messages", handleMessages);
+  // Anthropic-compatible endpoints
+  app.post("/v1/messages", handleMessages);
 
-	// 404 fallback
-	app.all("*", (c) => c.json({ error: "Not found" }, 404));
+  // 404 fallback
+  app.all("*", (c) => c.json({ error: "Not found" }, 404));
 
-	return app;
+  return app;
 }
 
 const app = createApp();
